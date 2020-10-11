@@ -16,6 +16,7 @@ import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.FileProvider;
@@ -30,9 +31,12 @@ import java.net.URL;
 
 public class UpdateActivity extends AppCompatActivity {
     private static final String TAG = UpdateActivity.class.getSimpleName();
-    private static final int PROGRESS = 100;
-    private Button button1;
-    private static String URL_STRING = "";//下载文件的地址
+    private static final int PROGRESS = 100;//进度
+    private static final int DOWNLOAD_COMPLETE = 200;//下载完成
+    private static final int INSTALL_PERMISS_CODE = 500;//安装权限
+    private static final int INSTALL_COMPLETE = 600;
+    private Button btnDownInstall;//下载安装
+    private static String appDownloadUrl = "";//下载文件的地址
     private static int down = 0;//状态码
     File file;
     private Handler handler = new Handler() {
@@ -42,13 +46,9 @@ public class UpdateActivity extends AppCompatActivity {
             super.handleMessage(msg);
 
             switch (msg.what) {
-                case 1:
-                    button1.setText("点击安装");
-                    down = 1;
-                    break;
-                case 2:
-                    down = 2;
-                    button1.setText("打开");
+                case DOWNLOAD_COMPLETE:
+                    Toast.makeText(mContext, "下载完成,准备安装！", Toast.LENGTH_SHORT).show();
+                    installApk();
                     break;
                 case PROGRESS:
                     String result = (String) msg.obj;
@@ -67,36 +67,6 @@ public class UpdateActivity extends AppCompatActivity {
         setContentView(R.layout.activity_update);
         initParamsAndValues();
         initView();
-
-        String apk = getIntent().getStringExtra("apk");
-        String path = "http://59.110.12.225:8080/szcb.admin";
-        URL_STRING = path + apk;
-        URL_STRING = "https://hdl-emas-app-bucket.oss-cn-beijing.aliyuncs.com/app/ipa/apk/chendexiang/app-debug.apk";
-        //调用手机中的浏览器下载
-//        Uri uri = Uri.parse(path+apk);
-//        Intent intent = new Intent(Intent.ACTION_VIEW, uri);
-//        startActivity(intent);
-
-        button1 = (Button) findViewById(R.id.button1);
-        button1.setOnClickListener(new View.OnClickListener() {
-
-            @Override
-            public void onClick(View v) {
-                // 下载apk
-                if (down == 0) {
-                    downFile(URL_STRING);
-                    button1.setText("正在下载");
-                    // 安装APK
-                } else if (down == 1) {
-                    installApk();
-                    // 打开apk
-                } else if (down == 2) {
-                    openApk(UpdateActivity.this, URL_STRING);
-                }
-
-            }
-        });
-
     }
 
     private void initParamsAndValues() {
@@ -104,6 +74,14 @@ public class UpdateActivity extends AppCompatActivity {
     }
 
     private void initView() {
+        btnDownInstall = (Button) findViewById(R.id.btn_down_install);
+        btnDownInstall.setOnClickListener(new View.OnClickListener() {
+
+            @Override
+            public void onClick(View v) {
+                downFile(appDownloadUrl);
+            }
+        });
         mTvProgress = findViewById(R.id.tv_progress);
     }
 
@@ -113,10 +91,10 @@ public class UpdateActivity extends AppCompatActivity {
         @Override
         public void onReceive(Context context, Intent intent) {
 
-            System.out.println("接收到安装完成apk的广播");
+            Toast.makeText(context, "安装完成！", Toast.LENGTH_SHORT).show();
 
             Message message = handler.obtainMessage();
-            message.what = 2;
+            message.what = INSTALL_COMPLETE;
             handler.sendMessage(message);
         }
     };
@@ -148,9 +126,11 @@ public class UpdateActivity extends AppCompatActivity {
                             int length = 0;
                             int total = 0;
                             while ((length = inputStream.read(buffer)) != -1) {
+                                //写入文件中
+                                fileOutputStream.write(buffer, 0, length);
+                                //统计进度
                                 total += length;
                                 String result = total * 1.0 / appLength * 100 + "%";
-                                fileOutputStream.write(buffer, 0, length);
                                 Message message = handler.obtainMessage();
                                 message.what = PROGRESS;
                                 message.obj = result;
@@ -161,9 +141,9 @@ public class UpdateActivity extends AppCompatActivity {
                         }
                         inputStream.close();
                     }
-                    // 往handler发送一条消息 更改button的text属性
+                    //下载完成,开始安装
                     Message message = handler.obtainMessage();
-                    message.what = 1;
+                    message.what = DOWNLOAD_COMPLETE;
                     handler.sendMessage(message);
                 } catch (MalformedURLException e) {
                     e.printStackTrace();
@@ -195,9 +175,11 @@ public class UpdateActivity extends AppCompatActivity {
                     }
                 }
             } else {
+                // <7.0
                 intent.setDataAndType(Uri.fromFile(file), "application/vnd.android.package-archive");
                 intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             }
+            // activity任务栈中Activity的个数>0
             if (mContext.getPackageManager().queryIntentActivities(intent, 0).size() > 0) {
                 mContext.startActivity(intent);
             }
@@ -206,9 +188,21 @@ public class UpdateActivity extends AppCompatActivity {
 
     private void startInstallPermissionSettingActivity() {
         //注意这个是8.0新API
-        Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        mContext.startActivity(intent);
+        Uri packageURI = Uri.parse("package:"+getPackageName());
+        Intent intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,packageURI);
+        startActivityForResult(intent, INSTALL_PERMISS_CODE);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        // 授权完成
+        if (resultCode == RESULT_OK && requestCode == INSTALL_PERMISS_CODE) {
+            Toast.makeText(this,"安装应用",Toast.LENGTH_SHORT).show();
+            installApk();
+        } else {
+            Toast.makeText(this,"授权失败，无法安装应用",Toast.LENGTH_SHORT).show();
+        }
     }
 
     @Override
@@ -229,26 +223,18 @@ public class UpdateActivity extends AppCompatActivity {
     }
 
     /**
-     * 打开已经安装好的apk
-     */
-    private void openApk(Context context, String url) {
-        PackageManager manager = context.getPackageManager();
-        // 这里的是你下载好的文件路径
-        PackageInfo info = manager.getPackageArchiveInfo(Environment.getExternalStorageDirectory().getAbsolutePath() + getFilePath(url), PackageManager.GET_ACTIVITIES);
-        if (info != null) {
-            Intent intent = manager.getLaunchIntentForPackage(info.applicationInfo.packageName);
-            startActivity(intent);
-        }
-    }
-
-    /**
      * 根据传过来url创建文件
      */
     private File getFile(String url) {
-//        File files = new File(Environment.getExternalStorageDirectory().getAbsoluteFile(), getFilePath(url));
-//        return files;
-        File files = new File(getExternalCacheDir(),getFilePath(url));
-        return files;
+        // 使用缓存目录,这个时候不需要申请存储权限
+        // 目录不存在，那么创建
+        File dir = new File(getExternalCacheDir(),"download");
+        if (!dir.exists()){
+            dir.mkdir();
+        }
+        // 创建文件
+        File file = new File(dir,getFilePath(url));
+        return file;
     }
 
     /**

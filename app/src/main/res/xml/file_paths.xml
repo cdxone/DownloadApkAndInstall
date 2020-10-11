@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <external-cache-path path="" name="download"/>
+    <external-cache-path path="/download" name="download"/>
 </resources>
