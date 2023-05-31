@@ -36,7 +36,7 @@ public class UpdateActivity extends AppCompatActivity {
     private static final int INSTALL_PERMISS_CODE = 500;//安装权限
     private static final int INSTALL_COMPLETE = 600;
     private Button btnDownInstall;//下载安装
-    private static String appDownloadUrl = "";//下载文件的地址
+    private static String appDownloadUrl = "https://gitee.com/ududu/qq/raw/master/wifi.apk";//下载文件的地址
     private static int down = 0;//状态码
     File file;
     private Handler handler = new Handler() {
